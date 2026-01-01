@@ -151,7 +151,7 @@ export function useFaceTracking(videoRef, options = {}) {
         }
     }, [])
 
-    // Check lighting conditions
+    // Check lighting conditions and return brightness data
     const checkLighting = useCallback(() => {
         const video = videoRef.current
         if (!video || video.paused || video.ended) return null
@@ -173,7 +173,12 @@ export function useFaceTracking(videoRef, options = {}) {
         }
 
         const avgBrightness = totalBrightness / (data.length / 4)
-        return avgBrightness < 40 ? 'low' : 'ok'  // Threshold for low light warning
+
+        // Return both status and numeric value for dynamic adjustment
+        return {
+            status: avgBrightness < 40 ? 'low' : 'ok',
+            brightness: avgBrightness  // 0-255 scale
+        }
     }, [videoRef])
 
     return {

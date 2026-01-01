@@ -40,7 +40,7 @@ const PRODUCTS = [
         id: 'glasses-3',
         name: 'Retro Round',
         image: '/images/3.png',
-        frameWidth: 130,              // mm - smaller round frame
+        frameWidth: 150,              // mm - smaller round frame
         frameStyle: 'round',
         sizeCategory: 'small-medium',
         bestForFaces: ['square', 'oval', 'oblong'],

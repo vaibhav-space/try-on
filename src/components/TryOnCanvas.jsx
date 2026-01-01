@@ -20,6 +20,8 @@ const TryOnCanvas = forwardRef(({
     const appRef = useRef(null)
     const glassesRef = useRef(null)
     const shadowRef = useRef(null)
+    const brightnessFilterRef = useRef(null)
+    const reflectionRef = useRef(null)
 
     // Expose screenshot method to parent
     useImperativeHandle(ref, () => ({
@@ -47,19 +49,29 @@ const TryOnCanvas = forwardRef(({
 
     const { landmarks, faceMatrix, faceCount, isLoading, error, isTracking, startTracking, stopTracking, checkLighting } = useFaceTracking(videoRef)
 
-    // Helper to check conditions periodically
+    // Helper to check conditions periodically and apply dynamic lighting
     useEffect(() => {
         const interval = setInterval(() => {
             if (!cameraReady) return
 
-            // Check lighting
+            // Check lighting and apply dynamic brightness
             if (checkLighting) {
-                const lighting = checkLighting()
-                if (lighting === 'low') {
-                    setFaceStatus(prev => prev.ok ? { ok: true, message: 'Lighting is dim' } : prev)
+                const lightingData = checkLighting()
+                if (lightingData) {
+                    // Update face status based on lighting
+                    if (lightingData.status === 'low') {
+                        setFaceStatus(prev => prev.ok ? { ok: true, message: 'Lighting is dim' } : prev)
+                    }
+
+                    // Dynamic Lighting: Adjust glasses brightness to match room
+                    // Normalize brightness: 0-255 -> 0.3-1.0 (never go too dark)
+                    if (brightnessFilterRef.current) {
+                        const normalizedBrightness = 0.3 + (lightingData.brightness / 255) * 0.7
+                        brightnessFilterRef.current.brightness(normalizedBrightness, false)
+                    }
                 }
             }
-        }, 2000) // Check every 2s
+        }, 500) // Check more frequently for smoother transitions
 
         return () => clearInterval(interval)
     }, [cameraReady, checkLighting])
@@ -176,8 +188,34 @@ const TryOnCanvas = forwardRef(({
             glassesSprite.visible = false
             glassesSprite.zIndex = 2
 
+            // Create brightness filter for dynamic lighting
+            const brightnessFilter = new ColorMatrixFilter()
+            glassesSprite.filters = [brightnessFilter]
+            brightnessFilterRef.current = brightnessFilter
+
             glassesContainer.addChild(glassesSprite)
             glassesRef.current = glassesSprite
+
+            // Create lens reflection sprite for dynamic glare
+            const reflectionGraphics = new Graphics()
+            // White gradient ellipse for specular highlight
+            reflectionGraphics.fill({ color: 0xFFFFFF, alpha: 0.15 })
+            reflectionGraphics.ellipse(0, 0, 60, 30) // Wide ellipse for realistic glare
+            reflectionGraphics.fill()
+
+            const reflectionTexture = app.renderer.generateTexture(reflectionGraphics)
+            const reflectionSprite = new Sprite(reflectionTexture)
+            reflectionSprite.anchor.set(0.5, 0.5)
+            reflectionSprite.visible = false
+            reflectionSprite.zIndex = 4 // Above everything
+            reflectionSprite.blendMode = 'add' // Additive blending for light effect
+
+            const reflectionBlur = new BlurFilter()
+            reflectionBlur.blur = 8
+            reflectionSprite.filters = [reflectionBlur]
+
+            glassesContainer.addChild(reflectionSprite)
+            reflectionRef.current = reflectionSprite
 
             appRef.current = app
 
@@ -297,6 +335,23 @@ const TryOnCanvas = forwardRef(({
             shadowRef.current.rotation = -transform.rotation
             shadowRef.current.alpha = 0.25  // Subtle shadow
             shadowRef.current.visible = true
+        }
+
+        // Dynamic Lens Reflection - shifts based on head rotation
+        if (reflectionRef.current && transform.raw) {
+            // The reflection moves opposite to head turn (light source stays fixed)
+            // Yaw: negative = head turns left, so reflection should go right
+            const yawRadians = transform.raw.yaw * (Math.PI / 180)
+            const reflectionOffsetX = -Math.sin(yawRadians) * 80 * finalScale
+            const reflectionOffsetY = -Math.sin(transform.raw.pitch * (Math.PI / 180)) * 30 * finalScale
+
+            reflectionRef.current.position.set(
+                mirroredX + reflectionOffsetX,
+                transform.y - 10 * finalScale + reflectionOffsetY  // Slightly above center
+            )
+            reflectionRef.current.scale.set(finalScale * 1.5, finalScale * 0.8)
+            reflectionRef.current.rotation = -transform.rotation
+            reflectionRef.current.visible = true
         }
 
         // Update debug info
