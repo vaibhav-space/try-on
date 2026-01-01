@@ -1,23 +1,43 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react'
 import { Application, Sprite, Texture, Container, Assets, BlurFilter, Graphics, ColorMatrixFilter } from 'pixi.js'
 import { useFaceTracking } from '../hooks/useFaceTracking'
 import { calculateGlassesTransform, checkFacePosition, resetSmoothing } from '../utils/transformCalculator'
+import { calculateFitConfidence } from '../utils/fitCalculator'
 
 /**
  * TryOnCanvas Component
  * Main try-on experience with PixiJS WebGL rendering
  */
-export default function TryOnCanvas({
+const TryOnCanvas = forwardRef(({
     selectedProduct,
     products,
     onProductChange,
+    onFitCalculated,
     showDebug = false
-}) {
+}, ref) => {
     const containerRef = useRef(null)
     const videoRef = useRef(null)
     const appRef = useRef(null)
     const glassesRef = useRef(null)
     const shadowRef = useRef(null)
+
+    // Expose screenshot method to parent
+    useImperativeHandle(ref, () => ({
+        takeScreenshot: async () => {
+            if (!appRef.current || !appRef.current.renderer) return null
+            try {
+                // Ensure latest render
+                appRef.current.render()
+                // Extract canvas content as image
+                const image = await appRef.current.renderer.extract.base64(appRef.current.stage)
+                return image
+            } catch (err) {
+                console.error('Screenshot failed:', err)
+                return null
+            }
+        }
+    }))
+
 
     const [cameraReady, setCameraReady] = useState(false)
     const [cameraError, setCameraError] = useState(null)
@@ -25,7 +45,24 @@ export default function TryOnCanvas({
     const [faceStatus, setFaceStatus] = useState({ ok: false, message: 'Initializing...' })
     const [debugInfo, setDebugInfo] = useState(null)
 
-    const { landmarks, isLoading, error, isTracking, startTracking, stopTracking } = useFaceTracking(videoRef)
+    const { landmarks, faceMatrix, faceCount, isLoading, error, isTracking, startTracking, stopTracking, checkLighting } = useFaceTracking(videoRef)
+
+    // Helper to check conditions periodically
+    useEffect(() => {
+        const interval = setInterval(() => {
+            if (!cameraReady) return
+
+            // Check lighting
+            if (checkLighting) {
+                const lighting = checkLighting()
+                if (lighting === 'low') {
+                    setFaceStatus(prev => prev.ok ? { ok: true, message: 'Lighting is dim' } : prev)
+                }
+            }
+        }, 2000) // Check every 2s
+
+        return () => clearInterval(interval)
+    }, [cameraReady, checkLighting])
 
     // Initialize camera
     useEffect(() => {
@@ -111,21 +148,23 @@ export default function TryOnCanvas({
             glassesContainer.sortableChildren = true
             app.stage.addChild(glassesContainer)
 
-            // Create shadow sprite
-            const shadowGraphics = new Graphics()
-            shadowGraphics.fill({ color: 0x000000, alpha: 0.25 })
-            shadowGraphics.ellipse(0, 0, 100, 15)
-            shadowGraphics.fill()
+            // Create nose bridge shadow for realism
+            // This creates the illusion of depth where glasses rest on nose
+            const bridgeShadowGraphics = new Graphics()
+            bridgeShadowGraphics.fill({ color: 0x000000, alpha: 0.2 })
+            // Small ellipse for nose bridge contact point
+            bridgeShadowGraphics.ellipse(0, 0, 25, 8)
+            bridgeShadowGraphics.fill()
 
-            const shadowTexture = app.renderer.generateTexture(shadowGraphics)
+            const shadowTexture = app.renderer.generateTexture(bridgeShadowGraphics)
             const shadowSprite = new Sprite(shadowTexture)
             shadowSprite.anchor.set(0.5, 0.5)
             shadowSprite.visible = false
-            shadowSprite.zIndex = 1
+            shadowSprite.zIndex = 3  // Above glasses for overlay effect
 
-            // Add blur to shadow
+            // Subtle blur for soft shadow edge
             const blurFilter = new BlurFilter()
-            blurFilter.blur = 8
+            blurFilter.blur = 4
             shadowSprite.filters = [blurFilter]
 
             glassesContainer.addChild(shadowSprite)
@@ -167,16 +206,12 @@ export default function TryOnCanvas({
 
                 if (glassesRef.current) {
                     glassesRef.current.texture = texture
+                    // Scale will be handled by the physics engine in the render loop
+                    glassesRef.current.visible = true
 
-                    // Calculate appropriate base scale
-                    // Glasses should be about 60% of canvas width at neutral position
-                    const targetWidth = canvasSize.width * 0.35
-                    const baseScale = targetWidth / texture.width
-                    glassesRef.current.scale.set(baseScale)
-
-                    // Update shadow size to match
+                    // Update shadow
                     if (shadowRef.current) {
-                        shadowRef.current.scale.set(baseScale * 0.8, baseScale * 0.3)
+                        shadowRef.current.visible = true
                     }
                 }
             } catch (err) {
@@ -185,7 +220,9 @@ export default function TryOnCanvas({
         }
 
         loadGlasses()
-    }, [selectedProduct, canvasSize])
+    }, [selectedProduct])
+
+
 
     // Update glasses position based on landmarks
     useEffect(() => {
@@ -203,12 +240,20 @@ export default function TryOnCanvas({
         const status = checkFacePosition(landmarks)
         setFaceStatus(status)
 
-        // Calculate transform
+        // Calculate fit confidence
+        if (onFitCalculated && selectedProduct) {
+            const fitInfo = calculateFitConfidence(landmarks, selectedProduct)
+            onFitCalculated(fitInfo)
+        }
+
+        // Calculate transform with enhanced 2.5D and PHYSICS SCALING
         const transform = calculateGlassesTransform(
             landmarks,
             canvasSize.width,
             canvasSize.height,
-            selectedProduct?.config || {}
+            selectedProduct?.config || {},
+            faceMatrix,
+            selectedProduct?.frameWidth || 140 // Pass the real frame width in mm
         )
 
         if (!transform) {
@@ -227,31 +272,30 @@ export default function TryOnCanvas({
         const texture = glassesRef.current.texture
         if (!texture || !texture.width) return
 
-        // Calculate base scale from target width
-        const targetWidth = canvasSize.width * 0.35
-        const baseScale = targetWidth / texture.width
-
-        // Apply transform scale with perspective adjustments
-        // Keep aspect ratio uniform - only apply subtle perspective on x-axis
-        const finalScale = baseScale * transform.scale
-        const perspectiveScaleX = finalScale * (1 + transform.skewX * 0.15)
-        const perspectiveScaleY = finalScale * (1 + Math.abs(transform.skewY) * 0.1)
+        // PHYSICS SCALING:
+        // transform.targetPixelWidth is the onscreen pixel width derived from physical mm width
+        const finalScale = transform.targetPixelWidth / texture.width
 
         glassesRef.current.position.set(mirroredX, transform.y)
         // Use NEGATIVE X scale for horizontal mirror, POSITIVE Y to keep right-side up
-        glassesRef.current.scale.set(-perspectiveScaleX, perspectiveScaleY)
+        // Use uniform scale for both axes to avoid asymmetric lens sizes
+        glassesRef.current.scale.set(-finalScale, finalScale)
         glassesRef.current.rotation = -transform.rotation  // Negate for mirrored display
 
-        // Apply skew for 2.5D effect (subtle) - also negate X skew for mirrored
-        glassesRef.current.skew.set(transform.skewX * 0.5, transform.skewY * 0.3)
+        // Remove all skew effects - they cause more problems than they solve
+        // The rotation alone handles head tilt correctly
+        glassesRef.current.skew.set(0, 0)
 
         glassesRef.current.visible = true
 
-        // Update shadow
+        // Update nose bridge shadow - positioned at bridge of nose
         if (shadowRef.current) {
-            shadowRef.current.position.set(mirroredX, transform.y + 25 * transform.scale)
-            shadowRef.current.scale.set(finalScale * 1.2, finalScale * 0.25)
+            // Shadow sits slightly below glasses center (on nose bridge)
+            const bridgeOffsetY = 8 * finalScale  // Small offset down
+            shadowRef.current.position.set(mirroredX, transform.y + bridgeOffsetY)
+            shadowRef.current.scale.set(finalScale * 0.8, finalScale * 0.5)
             shadowRef.current.rotation = -transform.rotation
+            shadowRef.current.alpha = 0.25  // Subtle shadow
             shadowRef.current.visible = true
         }
 
@@ -266,7 +310,7 @@ export default function TryOnCanvas({
                 roll: transform.raw.roll.toFixed(1)
             })
         }
-    }, [landmarks, canvasSize, selectedProduct, showDebug])
+    }, [landmarks, faceMatrix, canvasSize, selectedProduct, showDebug])
 
     // Handle window resize
     useEffect(() => {
@@ -378,4 +422,6 @@ export default function TryOnCanvas({
             )}
         </div>
     )
-}
+})
+
+export default TryOnCanvas

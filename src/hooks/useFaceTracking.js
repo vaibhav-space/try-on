@@ -10,6 +10,8 @@ export function useFaceTracking(videoRef, options = {}) {
     const [isLoading, setIsLoading] = useState(true)
     const [error, setError] = useState(null)
     const [landmarks, setLandmarks] = useState(null)
+    const [faceMatrix, setFaceMatrix] = useState(null)  // 4x4 transformation matrix
+    const [faceCount, setFaceCount] = useState(0)
     const [isTracking, setIsTracking] = useState(false)
 
     const landmarkerRef = useRef(null)
@@ -48,8 +50,8 @@ export function useFaceTracking(videoRef, options = {}) {
                     minFaceDetectionConfidence: minDetectionConfidence,
                     minFacePresenceConfidence: minTrackingConfidence,
                     minTrackingConfidence: minTrackingConfidence,
-                    outputFaceBlendshapes: false,  // Don't need these
-                    outputFacialTransformationMatrixes: false  // Don't need these either
+                    outputFaceBlendshapes: false,
+                    outputFacialTransformationMatrixes: true  // Enable 4x4 transformation matrix
                 })
 
                 if (isMounted) {
@@ -95,11 +97,22 @@ export function useFaceTracking(videoRef, options = {}) {
                 const results = landmarker.detectForVideo(video, startTimeMs)
 
                 if (results.faceLandmarks && results.faceLandmarks.length > 0) {
-                    // Use first face
+                    // Use first face for tracking
                     setLandmarks(results.faceLandmarks[0])
+                    setFaceCount(results.faceLandmarks.length) // Update face count from results
+
+                    // Get transformation matrix if available
+                    if (results.facialTransformationMatrixes && results.facialTransformationMatrixes.length > 0) {
+                        setFaceMatrix(results.facialTransformationMatrixes[0])
+                    } else {
+                        setFaceMatrix(null)
+                    }
+
                     setIsTracking(true)
                 } else {
                     setLandmarks(null)
+                    setFaceMatrix(null)
+                    setFaceCount(0)
                     setIsTracking(false)
                     resetSmoothing()  // Reset smoothing when face is lost
                 }
@@ -138,12 +151,40 @@ export function useFaceTracking(videoRef, options = {}) {
         }
     }, [])
 
+    // Check lighting conditions
+    const checkLighting = useCallback(() => {
+        const video = videoRef.current
+        if (!video || video.paused || video.ended) return null
+
+        // Create a small canvas to sample brightness
+        const canvas = document.createElement('canvas')
+        canvas.width = 50
+        canvas.height = 50
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(video, 0, 0, 50, 50)
+
+        const imageData = ctx.getImageData(0, 0, 50, 50)
+        const data = imageData.data
+        let totalBrightness = 0
+
+        for (let i = 0; i < data.length; i += 4) {
+            // Perceived brightness formula
+            totalBrightness += (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114)
+        }
+
+        const avgBrightness = totalBrightness / (data.length / 4)
+        return avgBrightness < 40 ? 'low' : 'ok'  // Threshold for low light warning
+    }, [videoRef])
+
     return {
         landmarks,
+        faceMatrix,
+        faceCount,
         isLoading,
         error,
         isTracking,
         startTracking,
-        stopTracking
+        stopTracking,
+        checkLighting
     }
 }

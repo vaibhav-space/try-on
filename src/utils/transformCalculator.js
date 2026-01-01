@@ -50,7 +50,47 @@ function midpoint(p1, p2) {
 }
 
 /**
- * Calculate angle between two points (for roll)
+ * Extract Euler angles from MediaPipe's 4x4 transformation matrix
+ * The matrix is in column-major order (16 floats)
+ * @param {Object} matrix - MediaPipe facialTransformationMatrix
+ * @returns {Object} { yaw, pitch, roll } in radians
+ */
+function extractAnglesFromMatrix(matrix) {
+    if (!matrix || !matrix.data || matrix.data.length < 16) {
+        return null
+    }
+
+    // MediaPipe returns column-major 4x4 matrix
+    // Layout: [m00,m10,m20,m30, m01,m11,m21,m31, m02,m12,m22,m32, m03,m13,m23,m33]
+    const m = matrix.data
+
+    // Extract rotation components (3x3 rotation matrix is in top-left)
+    // Column-major: m[col * 4 + row]
+    const m00 = m[0], m10 = m[1], m20 = m[2]
+    const m01 = m[4], m11 = m[5], m21 = m[6]
+    const m02 = m[8], m12 = m[9], m22 = m[10]
+
+    // Extract Euler angles (ZYX convention which is common for face tracking)
+    // These formulas work for most rotation orders
+    let pitch, yaw, roll
+
+    // Check for gimbal lock
+    if (Math.abs(m20) >= 0.9999) {
+        // Gimbal lock - use fallback
+        yaw = 0
+        pitch = m20 > 0 ? -Math.PI / 2 : Math.PI / 2
+        roll = Math.atan2(-m01, m11)
+    } else {
+        pitch = Math.asin(-m20)  // Pitch (up/down)
+        yaw = Math.atan2(m10, m00)  // Yaw (left/right)
+        roll = Math.atan2(m21, m22)  // Roll (tilt)
+    }
+
+    return { yaw, pitch, roll }
+}
+
+/**
+ * Calculate angle between two points (for roll fallback)
  */
 function angleBetween(p1, p2) {
     return Math.atan2(p2.y - p1.y, p2.x - p1.x)
@@ -103,23 +143,23 @@ function estimatePitch(landmarks) {
 }
 
 /**
- * Main transform calculation function
+ * Main transform calculation function - Enhanced 2.5D version
  * @param {Array} landmarks - Array of 478 landmarks from MediaPipe
  * @param {number} canvasWidth - Width of the rendering canvas
  * @param {number} canvasHeight - Height of the rendering canvas
  * @param {Object} glassesConfig - Product-specific configuration
+ * @param {Object} faceMatrix - Optional 4x4 transformation matrix from MediaPipe
  * @returns {Object} Transform data for PixiJS sprite
  */
-export function calculateGlassesTransform(landmarks, canvasWidth, canvasHeight, glassesConfig = {}) {
+export function calculateGlassesTransform(landmarks, canvasWidth, canvasHeight, glassesConfig = {}, faceMatrix = null, frameWidthMM = 140) {
     if (!landmarks || landmarks.length < 468) {
         return null
     }
 
     // Default configuration
     const config = {
-        widthMultiplier: glassesConfig.widthMultiplier || 1.35,  // How much wider than IPD
-        verticalOffset: glassesConfig.verticalOffset ?? 0.02,    // Offset from eye level (positive = lower)
-        bridgeOffset: glassesConfig.bridgeOffset || 0,           // Fine-tune horizontal centering
+        verticalOffset: glassesConfig.verticalOffset ?? 0.02,
+        bridgeOffset: glassesConfig.bridgeOffset || 0,
         ...glassesConfig
     }
 
@@ -128,50 +168,81 @@ export function calculateGlassesTransform(landmarks, canvasWidth, canvasHeight, 
     const rightEyeOuter = landmarks[LANDMARKS.RIGHT_EYE.OUTER_CORNER]
     const leftEyeInner = landmarks[LANDMARKS.LEFT_EYE.INNER_CORNER]
     const rightEyeInner = landmarks[LANDMARKS.RIGHT_EYE.INNER_CORNER]
-    const noseBridge = landmarks[LANDMARKS.NOSE.BRIDGE_TOP]
+    // Temple landmarks for face width estimation (approximate locations)
+    const leftTemple = landmarks[234] || leftEyeOuter
+    const rightTemple = landmarks[454] || rightEyeOuter
 
-    // Calculate interpupillary distance (IPD) - the key scaling reference
-    const ipd = distance(leftEyeInner, rightEyeInner)
+    // === Physics-based Scaling ===
 
-    // Calculate glasses width based on outer eye corners + multiplier
-    const outerEyeDistance = distance(leftEyeOuter, rightEyeOuter)
-    const glassesWidth = outerEyeDistance * config.widthMultiplier
+    // 1. Calculate face width in pixels (Temple to Temple)
+    // We use the 2D distance projected onto the canvas
+    const faceWidthPx = distance(
+        { x: leftTemple.x * canvasWidth, y: leftTemple.y * canvasHeight },
+        { x: rightTemple.x * canvasWidth, y: rightTemple.y * canvasHeight }
+    )
 
-    // Position: center between inner eye corners, with vertical offset
-    const eyeCenter = midpoint(leftEyeInner, rightEyeInner)
-    const position = {
-        x: eyeCenter.x * canvasWidth + config.bridgeOffset,
-        y: (eyeCenter.y + config.verticalOffset) * canvasHeight  // ADD offset (positive = down)
+    // 2. Establish Scale Ratio (Pixels per Millimeter)
+    // We assume an average human face width at the temples is ~145mm (reference from fitCalculator)
+    const REFERENCE_FACE_WIDTH_MM = 145
+    const pixelsPerMM = faceWidthPx / REFERENCE_FACE_WIDTH_MM
+
+    // 3. Calculate Target Glasses Width in Pixels
+    // This is the "Physical" width the glasses should be on screen
+    // productFrameWidth (mm) * pixelsPerMM = targetPixels
+    const targetPixelWidth = frameWidthMM * pixelsPerMM
+
+    // === Angles ===
+    // For yaw and pitch, use matrix if available, otherwise estimate
+    let yaw, pitch
+    const matrixAngles = extractAnglesFromMatrix(faceMatrix)
+
+    if (matrixAngles) {
+        yaw = matrixAngles.yaw
+        pitch = matrixAngles.pitch
+    } else {
+        yaw = estimateYaw(landmarks)
+        pitch = estimatePitch(landmarks)
     }
 
-    // Rotation (roll): angle between outer eye corners
-    // Use left to right order for correct angle orientation
+    // ALWAYS use landmark-based roll - it's more stable and accurate
     const roll = angleBetween(
         { x: leftEyeOuter.x * canvasWidth, y: leftEyeOuter.y * canvasHeight },
         { x: rightEyeOuter.x * canvasWidth, y: rightEyeOuter.y * canvasHeight }
     )
 
-    // Estimate yaw and pitch for perspective effects
-    const yaw = estimateYaw(landmarks)
-    const pitch = estimatePitch(landmarks)
+    // === Dynamic anchor point based on head rotation ===
+    const outerEyeDistance = distance(leftEyeOuter, rightEyeOuter)
+    const eyeCenter = midpoint(leftEyeInner, rightEyeInner)
 
-    // Scale based on IPD (normalized to typical face)
-    // Base reference: IPD of ~0.12 in normalized coordinates is "average"
-    const baseIPD = 0.10
-    const scale = (ipd / baseIPD) * (glassesWidth / outerEyeDistance)
+    // Shift anchor based on yaw (turning head right moves anchor left)
+    const yawOffset = Math.sin(yaw) * outerEyeDistance * 0.3
 
-    // Calculate perspective skew from yaw
-    // When head turns right (positive yaw), left side should appear larger
-    const skewX = Math.sin(yaw) * 0.15  // Reduced for subtlety
+    // Shift anchor based on pitch (looking up moves glasses up slightly)
+    const pitchOffset = Math.sin(pitch) * 0.02
 
-    // Vertical skew from pitch (minimal for glasses)
-    const skewY = Math.sin(pitch) * 0.05
+    const position = {
+        x: eyeCenter.x * canvasWidth + config.bridgeOffset + yawOffset * canvasWidth,
+        y: (eyeCenter.y + config.verticalOffset + pitchOffset) * canvasHeight
+    }
+
+    // === Asymmetric perspective scaling ===
+    // When head turns right (positive yaw), right side of glasses should appear smaller
+    const perspectiveStrength = 0.25  // How much perspective distortion to apply
+    const yawEffect = Math.sin(yaw) * perspectiveStrength
+
+    const scale = 1 // Placeholder, will be used by TryOnCanvas via targetPixelWidth instead
+
+    // Calculate perspective skew - stronger effect from yaw
+    const skewX = Math.sin(yaw) * 0.25
+
+    // Vertical skew from pitch
+    const skewY = Math.sin(pitch) * 0.08
 
     // Apply smoothing
     const smoothedX = smooth(position.x, previousValues.x)
     const smoothedY = smooth(position.y, previousValues.y)
-    const smoothedScale = smooth(scale, previousValues.scale)
-    const smoothedRotation = smooth(roll, previousValues.rotation, 0.4)  // More smoothing on rotation
+    const smoothedWidth = smooth(targetPixelWidth, previousValues.scale) // Reusing scale slot for width
+    const smoothedRotation = smooth(roll, previousValues.rotation, 0.3)
     const smoothedSkewX = smooth(skewX, previousValues.skewX)
     const smoothedSkewY = smooth(skewY, previousValues.skewY)
 
@@ -179,7 +250,7 @@ export function calculateGlassesTransform(landmarks, canvasWidth, canvasHeight, 
     previousValues = {
         x: smoothedX,
         y: smoothedY,
-        scale: smoothedScale,
+        scale: smoothedWidth, // Storing width here for smoothing continuity
         rotation: smoothedRotation,
         skewX: smoothedSkewX,
         skewY: smoothedSkewY
@@ -188,15 +259,18 @@ export function calculateGlassesTransform(landmarks, canvasWidth, canvasHeight, 
     return {
         x: smoothedX,
         y: smoothedY,
-        scale: smoothedScale,
+        targetPixelWidth: smoothedWidth, // The key output for physics scaling
+        scale: 1, // Legacy return, ignored by updated TryOnCanvas
         rotation: smoothedRotation,
         skewX: smoothedSkewX,
         skewY: smoothedSkewY,
 
         // Raw values for debugging
         raw: {
-            ipd,
-            yaw: yaw * (180 / Math.PI),  // Convert to degrees
+            ipd: distance(leftEyeInner, rightEyeInner),
+            faceWidthPx,
+            pixelsPerMM,
+            yaw: yaw * (180 / Math.PI),
             pitch: pitch * (180 / Math.PI),
             roll: roll * (180 / Math.PI)
         }
