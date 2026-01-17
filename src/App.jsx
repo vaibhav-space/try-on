@@ -24,7 +24,7 @@ const PRODUCTS = [
         id: 'glasses-2',
         name: 'Modern Aviator',
         image: '/images/2.png',
-        frameWidth: 145,              // mm - medium-large aviator
+        frameWidth: 128,              // mm - medium-large aviator
         frameStyle: 'aviator',
         sizeCategory: 'medium-large',
         bestForFaces: ['oval', 'heart', 'square'],
@@ -40,7 +40,14 @@ const PRODUCTS = [
         id: 'glasses-3',
         name: 'Retro Round',
         image: '/images/3.png',
-        frameWidth: 150,              // mm - smaller round frame
+        // Multi-angle sprites for 2.5D rendering
+        sprites: {
+            0: '/images/3/0.png',
+            15: '/images/3/15.png',
+            30: '/images/3/30.png',
+            45: '/images/3/45.png'
+        },
+        frameWidth: 154,              // mm - smaller round frame
         frameStyle: 'round',
         sizeCategory: 'small-medium',
         bestForFaces: ['square', 'oval', 'oblong'],
@@ -89,6 +96,7 @@ const PRODUCTS = [
 export default function App() {
     const [selectedProduct, setSelectedProduct] = useState(PRODUCTS[0])
     const [showDebug, setShowDebug] = useState(false)
+    const [sizingMode, setSizingMode] = useState('aesthetic')  // 'aesthetic' or 'trueSize'
     const [fitInfo, setFitInfo] = useState(null)
     const canvasRef = useRef(null)
 
@@ -144,6 +152,7 @@ export default function App() {
                     onProductChange={handleProductChange}
                     onFitCalculated={handleFitCalculated}
                     showDebug={showDebug}
+                    sizingMode={sizingMode}
                 />
             </main>
 
@@ -206,6 +215,13 @@ export default function App() {
             <footer className="footer">
                 <button className="action-button secondary" onClick={() => setShowDebug(!showDebug)}>
                     {showDebug ? 'Hide Debug' : 'Debug'}
+                </button>
+                <button
+                    className="action-button secondary"
+                    onClick={() => setSizingMode(m => m === 'aesthetic' ? 'trueSize' : 'aesthetic')}
+                    title="Aesthetic: Looks good on all faces. True Size: Shows actual frame size."
+                >
+                    {sizingMode === 'aesthetic' ? '🌟 Aesthetic' : '📏 True Size'}
                 </button>
                 <button className="action-button secondary" onClick={handleScreenshot}>
                     Share 📸

@@ -149,9 +149,11 @@ function estimatePitch(landmarks) {
  * @param {number} canvasHeight - Height of the rendering canvas
  * @param {Object} glassesConfig - Product-specific configuration
  * @param {Object} faceMatrix - Optional 4x4 transformation matrix from MediaPipe
+ * @param {number} frameWidthMM - Frame width in millimeters (for trueSize mode)
+ * @param {string} sizingMode - 'aesthetic' (default) or 'trueSize'
  * @returns {Object} Transform data for PixiJS sprite
  */
-export function calculateGlassesTransform(landmarks, canvasWidth, canvasHeight, glassesConfig = {}, faceMatrix = null, frameWidthMM = 140) {
+export function calculateGlassesTransform(landmarks, canvasWidth, canvasHeight, glassesConfig = {}, faceMatrix = null, frameWidthMM = 140, sizingMode = 'aesthetic') {
     if (!landmarks || landmarks.length < 468) {
         return null
     }
@@ -160,6 +162,7 @@ export function calculateGlassesTransform(landmarks, canvasWidth, canvasHeight, 
     const config = {
         verticalOffset: glassesConfig.verticalOffset ?? 0.02,
         bridgeOffset: glassesConfig.bridgeOffset || 0,
+        widthMultiplier: glassesConfig.widthMultiplier ?? 0.85, // Face width multiplier for aesthetic mode (0.8-0.9 = natural fit)
         ...glassesConfig
     }
 
@@ -172,24 +175,31 @@ export function calculateGlassesTransform(landmarks, canvasWidth, canvasHeight, 
     const leftTemple = landmarks[234] || leftEyeOuter
     const rightTemple = landmarks[454] || rightEyeOuter
 
-    // === Physics-based Scaling ===
-
-    // 1. Calculate face width in pixels (Temple to Temple)
-    // We use the 2D distance projected onto the canvas
+    // === Calculate Face Width in Pixels ===
+    // Temple to Temple distance gives us face width
     const faceWidthPx = distance(
         { x: leftTemple.x * canvasWidth, y: leftTemple.y * canvasHeight },
         { x: rightTemple.x * canvasWidth, y: rightTemple.y * canvasHeight }
     )
 
-    // 2. Establish Scale Ratio (Pixels per Millimeter)
-    // We assume an average human face width at the temples is ~145mm (reference from fitCalculator)
-    const REFERENCE_FACE_WIDTH_MM = 145
+    // === Calculate Target Width Based on Sizing Mode ===
+    let targetPixelWidth
+
+    // Always calculate pixelsPerMM for debug output
+    const REFERENCE_FACE_WIDTH_MM = 145  // Average human face width
     const pixelsPerMM = faceWidthPx / REFERENCE_FACE_WIDTH_MM
 
-    // 3. Calculate Target Glasses Width in Pixels
-    // This is the "Physical" width the glasses should be on screen
-    // productFrameWidth (mm) * pixelsPerMM = targetPixels
-    const targetPixelWidth = frameWidthMM * pixelsPerMM
+    if (sizingMode === 'trueSize') {
+        // === TRUESIZE MODE: Physics-based Scaling ===
+        // Frame size in mm → pixels (actual physical size)
+        targetPixelWidth = frameWidthMM * pixelsPerMM
+    } else {
+        // === AESTHETIC MODE: Face-Proportional Scaling (DEFAULT) ===
+        // Glasses width = face width * multiplier
+        // This makes EVERY glasses look good on any face, regardless of actual frame size
+        // Typical multiplier: 1.1 - 1.35 (glasses slightly wider than face looks natural)
+        targetPixelWidth = faceWidthPx * config.widthMultiplier
+    }
 
     // === Angles ===
     // For yaw and pitch, use matrix if available, otherwise estimate

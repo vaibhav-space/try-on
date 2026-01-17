@@ -7,21 +7,27 @@ import { calculateFitConfidence } from '../utils/fitCalculator'
 /**
  * TryOnCanvas Component
  * Main try-on experience with PixiJS WebGL rendering
+ * Supports multi-angle 2.5D sprite rendering
  */
 const TryOnCanvas = forwardRef(({
     selectedProduct,
     products,
     onProductChange,
     onFitCalculated,
-    showDebug = false
+    showDebug = false,
+    sizingMode = 'aesthetic'  // 'aesthetic' (default) or 'trueSize'
 }, ref) => {
     const containerRef = useRef(null)
     const videoRef = useRef(null)
     const appRef = useRef(null)
-    const glassesRef = useRef(null)
+    const glassesContainerRef = useRef(null)
     const shadowRef = useRef(null)
     const brightnessFilterRef = useRef(null)
     const reflectionRef = useRef(null)
+
+    // Multi-angle sprite refs: { 0: Sprite, 15: Sprite, 30: Sprite, 45: Sprite }
+    const angleSpriteRefs = useRef({})
+    const loadedSpritesRef = useRef({})
 
     // Expose screenshot method to parent
     useImperativeHandle(ref, () => ({
@@ -63,15 +69,13 @@ const TryOnCanvas = forwardRef(({
                         setFaceStatus(prev => prev.ok ? { ok: true, message: 'Lighting is dim' } : prev)
                     }
 
-                    // Dynamic Lighting: Adjust glasses brightness to match room
-                    // Normalize brightness: 0-255 -> 0.3-1.0 (never go too dark)
+                    // Dynamic Lighting: DISABLED - was causing black glasses
                     if (brightnessFilterRef.current) {
-                        const normalizedBrightness = 0.3 + (lightingData.brightness / 255) * 0.7
-                        brightnessFilterRef.current.brightness(normalizedBrightness, false)
+                        brightnessFilterRef.current.brightness(1.0, false)
                     }
                 }
             }
-        }, 500) // Check more frequently for smoother transitions
+        }, 500)
 
         return () => clearInterval(interval)
     }, [cameraReady, checkLighting])
@@ -159,12 +163,11 @@ const TryOnCanvas = forwardRef(({
             const glassesContainer = new Container()
             glassesContainer.sortableChildren = true
             app.stage.addChild(glassesContainer)
+            glassesContainerRef.current = glassesContainer
 
             // Create nose bridge shadow for realism
-            // This creates the illusion of depth where glasses rest on nose
             const bridgeShadowGraphics = new Graphics()
             bridgeShadowGraphics.fill({ color: 0x000000, alpha: 0.2 })
-            // Small ellipse for nose bridge contact point
             bridgeShadowGraphics.ellipse(0, 0, 25, 8)
             bridgeShadowGraphics.fill()
 
@@ -172,9 +175,8 @@ const TryOnCanvas = forwardRef(({
             const shadowSprite = new Sprite(shadowTexture)
             shadowSprite.anchor.set(0.5, 0.5)
             shadowSprite.visible = false
-            shadowSprite.zIndex = 3  // Above glasses for overlay effect
+            shadowSprite.zIndex = 10  // Above glasses
 
-            // Subtle blur for soft shadow edge
             const blurFilter = new BlurFilter()
             blurFilter.blur = 4
             shadowSprite.filters = [blurFilter]
@@ -182,33 +184,22 @@ const TryOnCanvas = forwardRef(({
             glassesContainer.addChild(shadowSprite)
             shadowRef.current = shadowSprite
 
-            // Create glasses sprite (will be updated when product changes)
-            const glassesSprite = new Sprite()
-            glassesSprite.anchor.set(0.5, 0.5)
-            glassesSprite.visible = false
-            glassesSprite.zIndex = 2
-
             // Create brightness filter for dynamic lighting
             const brightnessFilter = new ColorMatrixFilter()
-            glassesSprite.filters = [brightnessFilter]
             brightnessFilterRef.current = brightnessFilter
 
-            glassesContainer.addChild(glassesSprite)
-            glassesRef.current = glassesSprite
-
-            // Create lens reflection sprite for dynamic glare
+            // Create lens reflection sprite
             const reflectionGraphics = new Graphics()
-            // White gradient ellipse for specular highlight
             reflectionGraphics.fill({ color: 0xFFFFFF, alpha: 0.15 })
-            reflectionGraphics.ellipse(0, 0, 60, 30) // Wide ellipse for realistic glare
+            reflectionGraphics.ellipse(0, 0, 60, 30)
             reflectionGraphics.fill()
 
             const reflectionTexture = app.renderer.generateTexture(reflectionGraphics)
             const reflectionSprite = new Sprite(reflectionTexture)
             reflectionSprite.anchor.set(0.5, 0.5)
             reflectionSprite.visible = false
-            reflectionSprite.zIndex = 4 // Above everything
-            reflectionSprite.blendMode = 'add' // Additive blending for light effect
+            reflectionSprite.zIndex = 20
+            reflectionSprite.blendMode = 'add'
 
             const reflectionBlur = new BlurFilter()
             reflectionBlur.blur = 8
@@ -233,46 +224,121 @@ const TryOnCanvas = forwardRef(({
         }
     }, [cameraReady, canvasSize, startTracking, stopTracking])
 
-    // Load glasses texture when product changes
+    // Load glasses sprites when product changes
     useEffect(() => {
-        if (!glassesRef.current || !selectedProduct) return
+        if (!glassesContainerRef.current || !selectedProduct || !appRef.current) return
 
-        async function loadGlasses() {
-            try {
-                // Load the glasses texture
-                const texture = await Assets.load(selectedProduct.image)
+        async function loadGlassesSprites() {
+            const container = glassesContainerRef.current
 
-                if (glassesRef.current) {
-                    glassesRef.current.texture = texture
-                    // Scale will be handled by the physics engine in the render loop
-                    glassesRef.current.visible = true
+            // Clear existing angle sprites
+            Object.values(angleSpriteRefs.current).forEach(sprite => {
+                if (sprite && container.children.includes(sprite)) {
+                    container.removeChild(sprite)
+                }
+            })
+            angleSpriteRefs.current = {}
+            loadedSpritesRef.current = {}
 
-                    // Update shadow
-                    if (shadowRef.current) {
-                        shadowRef.current.visible = true
+            // Check if product has multi-angle sprites
+            if (selectedProduct.sprites) {
+                // Load all angle sprites
+                const angles = [0, 15, 30, 45]
+
+                for (const angle of angles) {
+                    const spritePath = selectedProduct.sprites[angle]
+                    if (spritePath) {
+                        try {
+                            const texture = await Assets.load(spritePath)
+
+                            const sprite = new Sprite(texture)
+                            sprite.anchor.set(0.5, 0.5)
+                            sprite.visible = false
+                            sprite.zIndex = 5
+                            sprite.filters = [brightnessFilterRef.current]
+
+                            container.addChild(sprite)
+                            angleSpriteRefs.current[angle] = sprite
+                            loadedSpritesRef.current[angle] = true
+                        } catch (err) {
+                            console.error(`Failed to load sprite for angle ${angle}:`, err)
+                        }
                     }
                 }
-            } catch (err) {
-                console.error('Failed to load glasses texture:', err)
+
+                // Show front view by default
+                if (angleSpriteRefs.current[0]) {
+                    angleSpriteRefs.current[0].visible = true
+                }
+            } else {
+                // Fallback: Load single image for products without multi-angle sprites
+                try {
+                    const texture = await Assets.load(selectedProduct.image)
+
+                    const sprite = new Sprite(texture)
+                    sprite.anchor.set(0.5, 0.5)
+                    sprite.visible = true
+                    sprite.zIndex = 5
+                    sprite.filters = [brightnessFilterRef.current]
+
+                    container.addChild(sprite)
+                    angleSpriteRefs.current[0] = sprite
+                    loadedSpritesRef.current[0] = true
+                } catch (err) {
+                    console.error('Failed to load glasses texture:', err)
+                }
+            }
+
+            // Show shadow
+            if (shadowRef.current) {
+                shadowRef.current.visible = true
             }
         }
 
-        loadGlasses()
+        loadGlassesSprites()
     }, [selectedProduct])
 
+    // Helper function to determine which sprite to show based on yaw
+    // Note: Video is mirrored (selfie mode) and sprites have temple arm on RIGHT side
+    // - Positive yaw (in mirrored video) = user turning LEFT visually → show original sprite (temple on right = far side)
+    // - Negative yaw (in mirrored video) = user turning RIGHT visually → mirror sprite (so temple on left = far side)
+    // MediaPipe yaw values are LOWER than actual head rotation, so we use lower thresholds
+    const getSpriteForYaw = useCallback((yaw) => {
+        const absYaw = Math.abs(yaw)
 
+        // Determine base angle with LOWER thresholds (MediaPipe gives lower yaw values than actual rotation)
+        let baseAngle
+        if (absYaw < 5) {
+            baseAngle = 0       // Nearly straight: use front view
+        } else if (absYaw < 12) {
+            baseAngle = 15      // Slight turn: use 15° sprite
+        } else if (absYaw < 20) {
+            baseAngle = 30      // Moderate turn: use 30° sprite
+        } else {
+            baseAngle = 45      // Strong turn: use 45° sprite
+        }
+
+        // In mirrored video:
+        // - Positive yaw = head turned left visually → use original sprite (temple on right = behind head)
+        // - Negative yaw = head turned right visually → mirror sprite (temple now on left = behind head)
+        const shouldMirror = yaw < 0
+
+        return { baseAngle, shouldMirror }
+    }, [])
 
     // Update glasses position based on landmarks
     useEffect(() => {
-        if (!landmarks || !glassesRef.current || !appRef.current) {
-            if (glassesRef.current) {
-                glassesRef.current.visible = false
-            }
-            if (shadowRef.current) {
-                shadowRef.current.visible = false
-            }
+        if (!landmarks || !appRef.current || !glassesContainerRef.current) {
+            // Hide all sprites
+            Object.values(angleSpriteRefs.current).forEach(sprite => {
+                if (sprite) sprite.visible = false
+            })
+            if (shadowRef.current) shadowRef.current.visible = false
             return
         }
+
+        // Check if we have any sprites loaded
+        if (Object.keys(angleSpriteRefs.current).length === 0) return
 
         // Check face position
         const status = checkFacePosition(landmarks)
@@ -284,70 +350,81 @@ const TryOnCanvas = forwardRef(({
             onFitCalculated(fitInfo)
         }
 
-        // Calculate transform with enhanced 2.5D and PHYSICS SCALING
+        // Calculate transform with sizing mode
         const transform = calculateGlassesTransform(
             landmarks,
             canvasSize.width,
             canvasSize.height,
             selectedProduct?.config || {},
             faceMatrix,
-            selectedProduct?.frameWidth || 140 // Pass the real frame width in mm
+            selectedProduct?.frameWidth || 140,
+            sizingMode
         )
 
         if (!transform) {
-            glassesRef.current.visible = false
-            if (shadowRef.current) {
-                shadowRef.current.visible = false
-            }
+            Object.values(angleSpriteRefs.current).forEach(sprite => {
+                if (sprite) sprite.visible = false
+            })
+            if (shadowRef.current) shadowRef.current.visible = false
             return
         }
 
-        // Apply transforms to glasses sprite
         // Mirror the X position since video is flipped
         const mirroredX = canvasSize.width - transform.x
 
-        // Get the base scale from the texture (set when product loads)
-        const texture = glassesRef.current.texture
-        if (!texture || !texture.width) return
+        // Get yaw for angle selection
+        const yaw = transform.raw?.yaw || 0
+        const { baseAngle, shouldMirror } = getSpriteForYaw(yaw)
 
-        // PHYSICS SCALING:
-        // transform.targetPixelWidth is the onscreen pixel width derived from physical mm width
-        const finalScale = transform.targetPixelWidth / texture.width
+        // Hide all sprites first
+        Object.values(angleSpriteRefs.current).forEach(sprite => {
+            if (sprite) {
+                sprite.visible = false
+                sprite.alpha = 0
+            }
+        })
 
-        glassesRef.current.position.set(mirroredX, transform.y)
-        // Use NEGATIVE X scale for horizontal mirror, POSITIVE Y to keep right-side up
-        // Use uniform scale for both axes to avoid asymmetric lens sizes
-        glassesRef.current.scale.set(-finalScale, finalScale)
-        glassesRef.current.rotation = -transform.rotation  // Negate for mirrored display
+        // Get the active sprite
+        const activeSprite = angleSpriteRefs.current[baseAngle] || angleSpriteRefs.current[0]
 
-        // Remove all skew effects - they cause more problems than they solve
-        // The rotation alone handles head tilt correctly
-        glassesRef.current.skew.set(0, 0)
+        if (!activeSprite || !activeSprite.texture || !activeSprite.texture.width) return
 
-        glassesRef.current.visible = true
+        // Calculate scale
+        const finalScale = transform.targetPixelWidth / activeSprite.texture.width
 
-        // Update nose bridge shadow - positioned at bridge of nose
+        // Apply transforms
+        activeSprite.position.set(mirroredX, transform.y)
+
+        // Apply mirroring based on turn direction
+        // When shouldMirror is true (turning right), we flip the sprite
+        // Base scale is negative (for video mirror), so we flip sign
+        const xScale = shouldMirror ? finalScale : -finalScale
+        activeSprite.scale.set(xScale, finalScale)
+
+        activeSprite.rotation = -transform.rotation
+        activeSprite.skew.set(0, 0)
+        activeSprite.visible = true
+        activeSprite.alpha = 1
+
+        // Update nose bridge shadow
         if (shadowRef.current) {
-            // Shadow sits slightly below glasses center (on nose bridge)
-            const bridgeOffsetY = 8 * finalScale  // Small offset down
+            const bridgeOffsetY = 8 * finalScale
             shadowRef.current.position.set(mirroredX, transform.y + bridgeOffsetY)
             shadowRef.current.scale.set(finalScale * 0.8, finalScale * 0.5)
             shadowRef.current.rotation = -transform.rotation
-            shadowRef.current.alpha = 0.25  // Subtle shadow
+            shadowRef.current.alpha = 0.25
             shadowRef.current.visible = true
         }
 
-        // Dynamic Lens Reflection - shifts based on head rotation
+        // Dynamic Lens Reflection
         if (reflectionRef.current && transform.raw) {
-            // The reflection moves opposite to head turn (light source stays fixed)
-            // Yaw: negative = head turns left, so reflection should go right
-            const yawRadians = transform.raw.yaw * (Math.PI / 180)
+            const yawRadians = yaw * (Math.PI / 180)
             const reflectionOffsetX = -Math.sin(yawRadians) * 80 * finalScale
-            const reflectionOffsetY = -Math.sin(transform.raw.pitch * (Math.PI / 180)) * 30 * finalScale
+            const reflectionOffsetY = -Math.sin((transform.raw.pitch || 0) * (Math.PI / 180)) * 30 * finalScale
 
             reflectionRef.current.position.set(
                 mirroredX + reflectionOffsetX,
-                transform.y - 10 * finalScale + reflectionOffsetY  // Slightly above center
+                transform.y - 10 * finalScale + reflectionOffsetY
             )
             reflectionRef.current.scale.set(finalScale * 1.5, finalScale * 0.8)
             reflectionRef.current.rotation = -transform.rotation
@@ -359,13 +436,16 @@ const TryOnCanvas = forwardRef(({
             setDebugInfo({
                 x: Math.round(mirroredX),
                 y: Math.round(transform.y),
-                scale: transform.scale.toFixed(2),
-                yaw: transform.raw.yaw.toFixed(1),
-                pitch: transform.raw.pitch.toFixed(1),
-                roll: transform.raw.roll.toFixed(1)
+                scale: finalScale.toFixed(2),
+                yaw: yaw.toFixed(1),
+                pitch: (transform.raw.pitch || 0).toFixed(1),
+                roll: (transform.raw.roll || 0).toFixed(1),
+                activeAngle: baseAngle,
+                mirrored: shouldMirror,
+                sizingMode
             })
         }
-    }, [landmarks, faceMatrix, canvasSize, selectedProduct, showDebug])
+    }, [landmarks, faceMatrix, canvasSize, selectedProduct, showDebug, getSpriteForYaw, onFitCalculated, sizingMode])
 
     // Handle window resize
     useEffect(() => {
@@ -471,6 +551,9 @@ const TryOnCanvas = forwardRef(({
                             <p>Yaw: {debugInfo.yaw}°</p>
                             <p>Pitch: {debugInfo.pitch}°</p>
                             <p>Roll: {debugInfo.roll}°</p>
+                            <p style={{ color: '#00ff00' }}>Angle: {debugInfo.activeAngle}°</p>
+                            <p style={{ color: '#ffff00' }}>Mirror: {debugInfo.mirrored ? 'Yes' : 'No'}</p>
+                            <p style={{ color: '#00ffff' }}>Mode: {debugInfo.sizingMode}</p>
                         </>
                     )}
                 </div>
