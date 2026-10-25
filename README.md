@@ -1,7 +1,10 @@
 # 2.5D Virtual Eyewear Try-On
 
-[![Live Demo](https://img.shields.io/badge/demo-live_preview-blue?style=for-the-badge&logo=google-chrome)](https://vaibhav-space.github.io/try-on/)
-[![LinkedIn Journey](https://img.shields.io/badge/linkedin-build_in_public-0A66C2?style=for-the-badge&logo=linkedin)](https://www.linkedin.com/feed/update/urn:li:activity:7419706482763575296/)
+> 🚀 **Live Interactive Web Demo:** [**https://vaibhav-space.github.io/try-on/**](https://vaibhav-space.github.io/try-on/)  
+> *Runs 100% in-browser on desktop & mobile with zero app installation.*
+
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-vaibhav--space.github.io%2Ftry--on-2ea44f?style=for-the-badge&logo=google-chrome&logoColor=white)](https://vaibhav-space.github.io/try-on/)
+[![LinkedIn Journey](https://img.shields.io/badge/LinkedIn-Build%20in%20Public-0A66C2?style=for-the-badge&logo=linkedin)](https://www.linkedin.com/feed/update/urn:li:activity:7419706482763575296/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
 
 A real-time, browser-native 2.5D virtual eyewear try-on engine built with **MediaPipe Face Landmarker**, **PixiJS v8 (WebGL/WebGPU)**, and **React 18**. 
