@@ -13,9 +13,26 @@ Instead of relying on heavy, expensive 3D CAD/GLB models, this project explores 
 ## Preview
 
 <div align="center">
-  <img src="assets/demo.gif" alt="Virtual Try-On Demo" width="380" style="border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.3);" />
+  <h3>🎥 Video Walkthrough (Demo from LinkedIn)</h3>
+  
+  <video src="https://github.com/vaibhav-space/try-on/raw/main/assets/demo.mp4" controls="controls" width="380" poster="assets/poster.png" style="max-height: 640px; border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.3);">
+    <a href="https://github.com/vaibhav-space/try-on/raw/main/assets/demo.mp4">Download and watch demo video (MP4)</a>
+  </video>
+
+  <br/><br/>
+
+  <details open>
+    <summary><strong>View Animated Preview (Instant Loop)</strong></summary>
+    <br/>
+    <img src="assets/demo.gif" alt="Virtual Try-On Demo" width="360" style="border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.3);" />
+  </details>
+
   <p><em>Real-time face tracking, head rotation alignment, and multi-frame try-on in the browser.</em></p>
-  <p><a href="assets/demo.mp4"><strong>Watch Full Resolution Video (MP4)</strong></a> &bull; <a href="https://vaibhav-space.github.io/try-on/"><strong>Try Interactive Web Demo</strong></a></p>
+  <p>
+    <a href="https://github.com/vaibhav-space/try-on/raw/main/assets/demo.mp4">▶️ <strong>Direct Video Link (MP4)</strong></a> &bull; 
+    <a href="https://www.linkedin.com/feed/update/urn:li:activity:7419706482763575296/">💬 <strong>LinkedIn Video Post</strong></a> &bull; 
+    <a href="https://vaibhav-space.github.io/try-on/">🚀 <strong>Interactive Web Demo</strong></a>
+  </p>
 </div>
 
 ---
