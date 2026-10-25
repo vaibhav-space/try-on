@@ -98,6 +98,7 @@ const PRODUCTS = [
 export default function App() {
     const [selectedProduct, setSelectedProduct] = useState(PRODUCTS[0])
     const [showDebug, setShowDebug] = useState(false)
+    const [showHud, setShowHud] = useState(true)
     const [sizingMode, setSizingMode] = useState('aesthetic')  // 'aesthetic' or 'trueSize'
     const [fitInfo, setFitInfo] = useState(null)
     const canvasRef = useRef(null)
@@ -154,6 +155,7 @@ export default function App() {
                     onProductChange={handleProductChange}
                     onFitCalculated={handleFitCalculated}
                     showDebug={showDebug}
+                    showHud={showHud}
                     sizingMode={sizingMode}
                 />
             </main>
@@ -215,8 +217,12 @@ export default function App() {
 
             {/* Footer actions */}
             <footer className="footer">
-                <button className="action-button secondary" onClick={() => setShowDebug(!showDebug)}>
-                    {showDebug ? 'Hide Debug' : 'Debug'}
+                <button 
+                    className={`action-button secondary ${showHud ? 'active-hud' : ''}`} 
+                    onClick={() => setShowHud(h => !h)}
+                    title="Toggle Real-Time Spatial Biometrics HUD"
+                >
+                    {showHud ? '🔬 HUD ON' : '🔬 HUD OFF'}
                 </button>
                 <button
                     className="action-button secondary"
@@ -227,6 +233,9 @@ export default function App() {
                 </button>
                 <button className="action-button secondary" onClick={handleScreenshot}>
                     Share 📸
+                </button>
+                <button className="action-button secondary" onClick={() => setShowDebug(!showDebug)}>
+                    {showDebug ? 'Hide Debug' : 'Debug'}
                 </button>
                 <button className="action-button primary">
                     Add to Cart

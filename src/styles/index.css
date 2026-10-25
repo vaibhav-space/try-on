@@ -449,6 +449,12 @@ body {
   background: var(--color-bg-card-hover);
 }
 
+.action-button.active-hud {
+  border-color: rgba(0, 240, 255, 0.5) !important;
+  color: #00F0FF !important;
+  box-shadow: 0 0 14px rgba(0, 240, 255, 0.25);
+}
+
 /* Debug Info */
 .debug-info {
   position: absolute;
@@ -503,5 +509,221 @@ body {
 
   .footer {
     padding-bottom: max(24px, calc(env(safe-area-inset-bottom) + 16px));
+  }
+}
+
+/* ========================================
+   Next-Gen Sci-Fi Optical HUD Styles
+   ======================================== */
+.optical-hud {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 15;
+  width: 250px;
+  background: rgba(8, 12, 22, 0.78);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(0, 240, 255, 0.28);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #e0f7fa;
+  font-family: 'JetBrains Mono', 'SF Mono', Consolas, Menlo, monospace;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 20px rgba(0, 240, 255, 0.12);
+  user-select: none;
+  pointer-events: none;
+  animation: hudFadeIn 0.3s ease-out;
+}
+
+@keyframes hudFadeIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Reticle Corner Brackets */
+.hud-corner {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-color: #00F0FF;
+  border-style: solid;
+  pointer-events: none;
+}
+.hud-corner.top-left {
+  top: -1px;
+  left: -1px;
+  border-width: 2px 0 0 2px;
+  border-top-left-radius: 4px;
+}
+.hud-corner.top-right {
+  top: -1px;
+  right: -1px;
+  border-width: 2px 2px 0 0;
+  border-top-right-radius: 4px;
+}
+.hud-corner.bottom-left {
+  bottom: -1px;
+  left: -1px;
+  border-width: 0 0 2px 2px;
+  border-bottom-left-radius: 4px;
+}
+.hud-corner.bottom-right {
+  bottom: -1px;
+  right: -1px;
+  border-width: 0 2px 2px 0;
+  border-bottom-right-radius: 4px;
+}
+
+/* Header */
+.hud-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(0, 240, 255, 0.18);
+  padding-bottom: 6px;
+  margin-bottom: 8px;
+}
+
+.hud-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hud-pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  box-shadow: 0 0 8px currentColor;
+  animation: pulseGlow 1.4s infinite ease-in-out;
+}
+
+@keyframes pulseGlow {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
+}
+
+.hud-title {
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  color: #00F0FF;
+  text-shadow: 0 0 6px rgba(0, 240, 255, 0.4);
+}
+
+.hud-badge {
+  font-size: 0.58rem;
+  padding: 2px 5px;
+  background: rgba(0, 255, 163, 0.12);
+  border: 1px solid rgba(0, 255, 163, 0.3);
+  border-radius: 4px;
+  color: #00FFA3;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+/* Metrics Grid */
+.hud-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 8px;
+  margin-bottom: 8px;
+}
+
+.hud-metric {
+  display: flex;
+  flex-direction: column;
+}
+
+.metric-label {
+  font-size: 0.54rem;
+  color: rgba(224, 247, 250, 0.55);
+  letter-spacing: 0.03em;
+  margin-bottom: 1px;
+}
+
+.metric-value {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.metric-unit {
+  font-size: 0.6rem;
+  color: #00F0FF;
+  font-weight: 400;
+}
+
+/* Telemetry Row */
+.hud-telemetry-row {
+  display: flex;
+  justify-content: space-between;
+  background: rgba(0, 240, 255, 0.06);
+  border: 1px dashed rgba(0, 240, 255, 0.2);
+  border-radius: 4px;
+  padding: 4px 6px;
+  margin-bottom: 8px;
+}
+
+.telemetry-item {
+  display: flex;
+  gap: 4px;
+  align-items: baseline;
+}
+
+.telem-label {
+  font-size: 0.54rem;
+  color: rgba(224, 247, 250, 0.5);
+  font-weight: 600;
+}
+
+.telem-val {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #00F0FF;
+}
+
+/* Score Bar */
+.hud-score-container {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.hud-score-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.56rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.score-label {
+  color: rgba(224, 247, 250, 0.6);
+}
+
+.score-track {
+  width: 100%;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.score-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.2s ease, background 0.3s ease;
+}
+
+@media (max-width: 480px) {
+  .optical-hud {
+    width: 215px;
+    top: 8px;
+    left: 8px;
+    padding: 8px 10px;
+  }
+  .metric-value {
+    font-size: 0.78rem;
   }
 }

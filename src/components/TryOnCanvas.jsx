@@ -3,6 +3,7 @@ import { Application, Sprite, Texture, Container, Assets, BlurFilter, Graphics, 
 import { useFaceTracking } from '../hooks/useFaceTracking'
 import { calculateGlassesTransform, checkFacePosition, resetSmoothing } from '../utils/transformCalculator'
 import { calculateFitConfidence } from '../utils/fitCalculator'
+import OpticalHud from './OpticalHud'
 
 /**
  * TryOnCanvas Component
@@ -15,6 +16,7 @@ const TryOnCanvas = forwardRef(({
     onProductChange,
     onFitCalculated,
     showDebug = false,
+    showHud = true,
     sizingMode = 'aesthetic'  // 'aesthetic' (default) or 'trueSize'
 }, ref) => {
     const containerRef = useRef(null)
@@ -28,6 +30,8 @@ const TryOnCanvas = forwardRef(({
     // Multi-angle sprite refs: { 0: Sprite, 15: Sprite, 30: Sprite, 45: Sprite }
     const angleSpriteRefs = useRef({})
     const loadedSpritesRef = useRef({})
+    const [telemetry, setTelemetry] = useState(null)
+    const [fitData, setFitData] = useState(null)
 
     // Expose screenshot method to parent
     useImperativeHandle(ref, () => ({
@@ -344,12 +348,6 @@ const TryOnCanvas = forwardRef(({
         const status = checkFacePosition(landmarks)
         setFaceStatus(status)
 
-        // Calculate fit confidence
-        if (onFitCalculated && selectedProduct) {
-            const fitInfo = calculateFitConfidence(landmarks, selectedProduct)
-            onFitCalculated(fitInfo)
-        }
-
         // Calculate transform with sizing mode
         const transform = calculateGlassesTransform(
             landmarks,
@@ -360,6 +358,29 @@ const TryOnCanvas = forwardRef(({
             selectedProduct?.frameWidth || 140,
             sizingMode
         )
+
+        // Calculate fit confidence & telemetry for Optical HUD
+        if (selectedProduct) {
+            const fitInfo = calculateFitConfidence(landmarks, selectedProduct)
+            if (transform && transform.raw) {
+                const telem = {
+                    yaw: Number((transform.raw.yaw || 0).toFixed(1)),
+                    pitch: Number((transform.raw.pitch || 0).toFixed(1)),
+                    roll: Number((transform.raw.roll || 0).toFixed(1)),
+                    ipdMm: Math.round((transform.raw.ipd || 0.1) * 620),
+                    pixelsPerMM: Number((transform.raw.pixelsPerMM || 1).toFixed(2)),
+                    faceWidthMm: fitInfo.faceWidth || 142,
+                    frameWidthMm: selectedProduct.frameWidth,
+                    differenceMm: selectedProduct.frameWidth - (fitInfo.faceWidth || 142)
+                }
+                fitInfo.telemetry = telem
+                setTelemetry(telem)
+            }
+            setFitData(fitInfo)
+            if (onFitCalculated) {
+                onFitCalculated(fitInfo)
+            }
+        }
 
         if (!transform) {
             Object.values(angleSpriteRefs.current).forEach(sprite => {
@@ -522,6 +543,15 @@ const TryOnCanvas = forwardRef(({
             <div
                 ref={containerRef}
                 className="canvas-container"
+            />
+
+            {/* Sci-Fi Optical Biometric HUD */}
+            <OpticalHud
+                telemetry={telemetry}
+                fitInfo={fitData}
+                selectedProduct={selectedProduct}
+                isTracking={isTracking}
+                isVisible={showHud}
             />
 
             {/* Loading overlay */}
