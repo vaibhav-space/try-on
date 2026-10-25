@@ -3,11 +3,13 @@ import TryOnCanvas from './components/TryOnCanvas'
 import { getFitColor, getFitEmoji } from './utils/fitCalculator'
 
 // Product catalog with comprehensive metadata for fit calculations
+const BASE = import.meta.env.BASE_URL.endsWith('/') ? import.meta.env.BASE_URL : `${import.meta.env.BASE_URL}/`
+
 const PRODUCTS = [
     {
         id: 'glasses-1',
         name: 'Classic Black',
-        image: '/images/1.png',
+        image: `${BASE}images/1.png`,
         frameWidth: 160,              // mm - standard medium frame
         frameStyle: 'rectangle',
         sizeCategory: 'medium',
@@ -23,7 +25,7 @@ const PRODUCTS = [
     {
         id: 'glasses-2',
         name: 'Modern Aviator',
-        image: '/images/2.png',
+        image: `${BASE}images/2.png`,
         frameWidth: 128,              // mm - medium-large aviator
         frameStyle: 'aviator',
         sizeCategory: 'medium-large',
@@ -39,13 +41,13 @@ const PRODUCTS = [
     {
         id: 'glasses-3',
         name: 'Retro Round',
-        image: '/images/3.png',
+        image: `${BASE}images/3.png`,
         // Multi-angle sprites for 2.5D rendering
         sprites: {
-            0: '/images/3/0.png',
-            15: '/images/3/15.png',
-            30: '/images/3/30.png',
-            45: '/images/3/45.png'
+            0: `${BASE}images/3/0.png`,
+            15: `${BASE}images/3/15.png`,
+            30: `${BASE}images/3/30.png`,
+            45: `${BASE}images/3/45.png`
         },
         frameWidth: 154,              // mm - smaller round frame
         frameStyle: 'round',
@@ -62,7 +64,7 @@ const PRODUCTS = [
     {
         id: 'glasses-4',
         name: 'Sport Wrap',
-        image: '/images/4.png',
+        image: `${BASE}images/4.png`,
         frameWidth: 150,              // mm - large wraparound
         frameStyle: 'wraparound',
         sizeCategory: 'large',
@@ -78,7 +80,7 @@ const PRODUCTS = [
     {
         id: 'glasses-5',
         name: 'Designer Browline',
-        image: '/images/5.png',
+        image: `${BASE}images/5.png`,
         frameWidth: 162,              // mm - medium browline
         frameStyle: 'browline',
         sizeCategory: 'medium',
